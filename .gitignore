@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+*.onnx
+*.npz
+poc/codec/onnx/
+.env

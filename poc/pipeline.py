@@ -1,6 +1,5 @@
 """Main experiment pipeline: encode → impair → protect → decode → eval."""
 import numpy as np
-from poc.codec.encodec_wrapper import EnCodecWrapper
 from poc.importance.composite import score_composite
 from poc.importance.a1_vad_onset import score_a1
 from poc.network.random_loss import apply_random_loss
@@ -24,38 +23,45 @@ def apply_protection(mask: np.ndarray, protected_indices: np.ndarray) -> np.ndar
 
 def run_single_experiment(
     pcm: np.ndarray,
-    codec: EnCodecWrapper,
+    codec,
     network_type: str,
     plr: float,
     protection_method: str,
     budget_frac: float = 0.1,
     seed: int = 42,
+    tokens: np.ndarray = None,
+    importance_scores: np.ndarray = None,
 ) -> dict:
     """Run one experiment condition.
 
     Args:
         pcm: clean PCM audio, float32 [-1, 1]
-        codec: initialized codec wrapper
+        codec: initialized codec wrapper (CodecInterface)
         network_type: "random_loss", "burst_loss", "jitter_discard"
         plr: packet loss rate (0-1)
-        protection_method: "none", "random", "heuristic", "importance_aware"
+        protection_method: "none", "random", "heuristic", "importance_aware",
+                          "importance_selective"
         budget_frac: fraction of frames to protect (e.g. 0.1 = 10%)
         seed: random seed
+        tokens: pre-encoded tokens to avoid re-encoding (optional)
+        importance_scores: pre-computed importance scores (optional)
 
     Returns:
         dict with all metrics
     """
     rng = np.random.default_rng(seed)
 
-    # 1. Encode
-    tokens = codec.encode(pcm)
+    # 1. Encode (use cached tokens if provided)
+    if tokens is None:
+        tokens = codec.encode(pcm)
     n_frames = tokens.shape[0]
     budget = max(1, int(n_frames * budget_frac))
 
-    # 2. Compute importance scores (needed for importance_aware method)
-    importance_scores = score_composite(
-        pcm, tokens, codec.frame_size, codec.sample_rate
-    )
+    # 2. Compute importance scores (use cached if provided)
+    if importance_scores is None:
+        importance_scores = score_composite(
+            pcm, tokens, codec.frame_size, codec.sample_rate
+        )
 
     # 3. Select protected frames based on method
     if protection_method == "importance_selective":
@@ -96,8 +102,7 @@ def run_single_experiment(
         elif network_type == "burst_loss":
             raw_mask = apply_burst_loss(n_frames, plr, burst_ratio=2.0, rng=rng)
         elif network_type == "jitter_discard":
-            # Map PLR to jitter std: higher PLR -> higher jitter
-            jitter_std = plr * 200  # e.g. 5% -> 10ms std
+            jitter_std = plr * 200
             raw_mask = apply_jitter_discard(
                 n_frames, jitter_ms_std=jitter_std, buffer_depth_ms=40.0, rng=rng
             )
@@ -110,11 +115,8 @@ def run_single_experiment(
     # 6. Decode with loss
     pcm_degraded = codec.decode_with_mask(tokens, final_mask)
 
-    # 7. Also decode clean (no loss) as codec baseline
-    pcm_clean_decoded = codec.decode(tokens)
-
-    # 8. Evaluate
-    min_len = min(len(pcm), len(pcm_degraded), len(pcm_clean_decoded))
+    # 7. Evaluate
+    min_len = min(len(pcm), len(pcm_degraded))
     pcm_ref = pcm[:min_len]
     pcm_deg = pcm_degraded[:min_len]
 

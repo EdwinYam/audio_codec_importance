@@ -12,6 +12,7 @@ import librosa
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poc.codec.encodec_wrapper import EnCodecWrapper
+from poc.codec.hilcodec_wrapper import HILCodecWrapper
 from poc.pipeline import run_single_experiment
 from poc.eval.oracle import compute_oracle_importance
 from poc.eval.diagnostics import oracle_spearman, precision_at_k
@@ -19,8 +20,12 @@ from poc.importance.composite import score_individual
 
 
 # ─── Configuration ───────────────────────────────────────────────
+CODEC_CONFIGS = [
+    {"name": "EnCodec_3kbps", "cls": EnCodecWrapper, "kwargs": {"bandwidth": 3.0, "device": "cpu"}},
+    {"name": "HILCodec_3kbps", "cls": HILCodecWrapper, "kwargs": {"n_quantizers": 4}},
+]
 NETWORK_TYPES = ["random_loss"]
-PLRS = [0.0, 0.01, 0.03, 0.05]
+PLRS = [0.0, 0.01, 0.03, 0.05, 0.10, 0.20, 0.30, 0.40]
 PROTECTION_METHODS = ["none", "random", "heuristic", "importance_aware", "importance_selective"]
 BUDGET_FRAC = 0.10  # 10% redundancy budget
 SEEDS = [42, 123]  # 2 seeds for averaging
@@ -55,13 +60,8 @@ def load_and_resample(path: str, target_sr: int = TARGET_SR) -> np.ndarray:
 
 
 def run_full_matrix(data_dir: str, results_dir: str):
-    """Run full experiment matrix."""
+    """Run full experiment matrix across all codecs."""
     os.makedirs(results_dir, exist_ok=True)
-
-    print("Loading EnCodec 24kHz model...")
-    codec = EnCodecWrapper(bandwidth=3.0, device="cpu")
-    print(f"Codec loaded: SR={codec.sample_rate}, frame_size={codec.frame_size}, "
-          f"codebooks={codec.n_codebooks}")
 
     audio_files = load_audio_files(data_dir)
     if not audio_files:
@@ -73,51 +73,68 @@ def run_full_matrix(data_dir: str, results_dir: str):
     all_results = []
     oracle_diagnostics = []
 
-    for audio_idx, audio_path in enumerate(audio_files):
-        fname = os.path.basename(audio_path)
-        print(f"\n[{audio_idx+1}/{len(audio_files)}] Processing: {fname}")
+    for codec_cfg in CODEC_CONFIGS:
+        codec_name = codec_cfg["name"]
+        print(f"\n{'='*60}")
+        print(f"Loading codec: {codec_name}")
+        print(f"{'='*60}")
+        codec = codec_cfg["cls"](**codec_cfg["kwargs"])
+        print(f"  SR={codec.sample_rate}, frame_size={codec.frame_size}, "
+              f"codebooks={codec.n_codebooks}")
 
-        pcm = load_and_resample(audio_path)
-        print(f"  Audio: {len(pcm)} samples, {len(pcm)/TARGET_SR:.2f}s")
+        for audio_idx, audio_path in enumerate(audio_files):
+            fname = os.path.basename(audio_path)
+            print(f"\n[{codec_name}] [{audio_idx+1}/{len(audio_files)}] Processing: {fname}")
 
-        # Encode once
-        tokens = codec.encode(pcm)
-        n_frames = tokens.shape[0]
-        print(f"  Encoded: {n_frames} frames, {tokens.shape[1]} codebooks")
+            pcm = load_and_resample(audio_path)
+            print(f"  Audio: {len(pcm)} samples, {len(pcm)/TARGET_SR:.2f}s")
 
-        # Compute oracle importance (expensive but only once per file)
-        print("  Computing oracle importance (leave-one-out)...")
-        t0 = time.time()
-        oracle_damage = compute_oracle_importance(codec, pcm, tokens)
-        print(f"  Oracle computed in {time.time()-t0:.1f}s")
+            # Encode once
+            tokens = codec.encode(pcm)
+            n_frames = tokens.shape[0]
+            print(f"  Encoded: {n_frames} frames, {tokens.shape[1]} codebooks")
 
-        # Compute all importance method scores
-        scores = score_individual(pcm, tokens, codec.frame_size, codec.sample_rate)
+            # Compute oracle importance (expensive but only once per file per codec)
+            print("  Computing oracle importance (leave-one-out)...")
+            t0 = time.time()
+            oracle_damage = compute_oracle_importance(codec, pcm, tokens)
+            print(f"  Oracle computed in {time.time()-t0:.1f}s")
 
-        # Diagnostic: compare each method to oracle
-        for method_name, method_scores in scores.items():
-            sp = oracle_spearman(method_scores, oracle_damage)
-            pk = precision_at_k(method_scores, oracle_damage, k_frac=0.2)
-            oracle_diagnostics.append({
-                "file": fname,
-                "method": method_name,
-                "spearman_corr": sp,
-                "precision_at_20pct": pk,
-            })
-            print(f"  {method_name}: Spearman={sp:.3f}, P@20%={pk:.3f}")
+            # Compute all importance method scores
+            scores = score_individual(pcm, tokens, codec.frame_size, codec.sample_rate)
 
-        # Run experiment matrix
-        for network in NETWORK_TYPES:
-            for plr in PLRS:
-                for method in PROTECTION_METHODS:
-                    for seed in SEEDS:
-                        result = run_single_experiment(
-                            pcm, codec, network, plr, method,
-                            budget_frac=BUDGET_FRAC, seed=seed,
-                        )
-                        result["file"] = fname
-                        result["seed"] = seed
-                        all_results.append(result)
+            # Diagnostic: compare each method to oracle
+            for method_name, method_scores in scores.items():
+                sp = oracle_spearman(method_scores, oracle_damage)
+                pk = precision_at_k(method_scores, oracle_damage, k_frac=0.2)
+                oracle_diagnostics.append({
+                    "codec": codec_name,
+                    "file": fname,
+                    "method": method_name,
+                    "spearman_corr": sp,
+                    "precision_at_20pct": pk,
+                })
+                print(f"  {method_name}: Spearman={sp:.3f}, P@20%={pk:.3f}")
+
+            # Pre-compute composite importance scores (reuse across experiments)
+            from poc.importance.composite import score_composite
+            importance_scores = score_composite(pcm, tokens, codec.frame_size, codec.sample_rate)
+
+            # Run experiment matrix (pass cached tokens + importance)
+            for network in NETWORK_TYPES:
+                for plr in PLRS:
+                    for method in PROTECTION_METHODS:
+                        for seed in SEEDS:
+                            result = run_single_experiment(
+                                pcm, codec, network, plr, method,
+                                budget_frac=BUDGET_FRAC, seed=seed,
+                                tokens=tokens,
+                                importance_scores=importance_scores,
+                            )
+                            result["codec"] = codec_name
+                            result["file"] = fname
+                            result["seed"] = seed
+                            all_results.append(result)
 
     # Save results
     df = pd.DataFrame(all_results)
@@ -132,11 +149,11 @@ def run_full_matrix(data_dir: str, results_dir: str):
     df_diag.to_csv(diag_path, index=False)
     print(f"Oracle diagnostics saved to {diag_path}")
 
-    # Print summary
+    # Print summary per codec
     print("\n" + "=" * 60)
     print("SUMMARY (averaged over files and seeds)")
     print("=" * 60)
-    summary = df.groupby(["network_type", "target_plr", "protection_method"]).agg({
+    summary = df.groupby(["codec", "network_type", "target_plr", "protection_method"]).agg({
         "PESQ": "mean",
         "STOI": "mean",
         "ESTOI": "mean",
