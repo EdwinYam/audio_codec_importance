@@ -31,10 +31,12 @@ def generate_report(results_dir: str):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
     for ax, net in zip(axes, ["random_loss", "burst_loss", "jitter_discard"]):
         sub = summary[summary["network_type"] == net]
-        for method in ["none", "random", "heuristic", "importance_aware"]:
+        for method in ["none", "random", "heuristic", "importance_aware", "importance_selective"]:
             m = sub[sub["protection_method"] == method]
+            if len(m) == 0:
+                continue
             label = method.replace("_", " ").title()
-            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o"}[method]
+            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o", "importance_selective": "D"}[method]
             ax.plot(m["target_plr"] * 100, m["STOI"], marker=marker, label=label, linewidth=2)
         ax.set_xlabel("Target PLR (%)")
         ax.set_title(net.replace("_", " ").title())
@@ -50,10 +52,12 @@ def generate_report(results_dir: str):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
     for ax, net in zip(axes, ["random_loss", "burst_loss", "jitter_discard"]):
         sub = summary[summary["network_type"] == net]
-        for method in ["none", "random", "heuristic", "importance_aware"]:
+        for method in ["none", "random", "heuristic", "importance_aware", "importance_selective"]:
             m = sub[sub["protection_method"] == method]
+            if len(m) == 0:
+                continue
             label = method.replace("_", " ").title()
-            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o"}[method]
+            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o", "importance_selective": "D"}[method]
             ax.plot(m["target_plr"] * 100, m["PESQ"], marker=marker, label=label, linewidth=2)
         ax.set_xlabel("Target PLR (%)")
         ax.set_title(net.replace("_", " ").title())
@@ -69,10 +73,12 @@ def generate_report(results_dir: str):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
     for ax, net in zip(axes, ["random_loss", "burst_loss", "jitter_discard"]):
         sub = summary[summary["network_type"] == net]
-        for method in ["none", "random", "heuristic", "importance_aware"]:
+        for method in ["none", "random", "heuristic", "importance_aware", "importance_selective"]:
             m = sub[sub["protection_method"] == method]
+            if len(m) == 0:
+                continue
             label = method.replace("_", " ").title()
-            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o"}[method]
+            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o", "importance_selective": "D"}[method]
             ax.plot(m["target_plr"] * 100, m["SI-SDR"], marker=marker, label=label, linewidth=2)
         ax.set_xlabel("Target PLR (%)")
         ax.set_title(net.replace("_", " ").title())
@@ -88,10 +94,12 @@ def generate_report(results_dir: str):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
     for ax, net in zip(axes, ["random_loss", "burst_loss", "jitter_discard"]):
         sub = summary[summary["network_type"] == net]
-        for method in ["none", "random", "heuristic", "importance_aware"]:
+        for method in ["none", "random", "heuristic", "importance_aware", "importance_selective"]:
             m = sub[sub["protection_method"] == method]
+            if len(m) == 0:
+                continue
             label = method.replace("_", " ").title()
-            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o"}[method]
+            marker = {"none": "x", "random": "s", "heuristic": "^", "importance_aware": "o", "importance_selective": "D"}[method]
             ax.plot(m["target_plr"] * 100, m["post_repair_loss_rate"] * 100,
                     marker=marker, label=label, linewidth=2)
         ax.set_xlabel("Target PLR (%)")
@@ -222,6 +230,7 @@ def generate_report(results_dir: str):
     report_lines.extend([
         "",
         "## Plots\n",
+        "- [PESQ vs PLR](plots/pesq_vs_plr.png)",
         "- [STOI vs PLR](plots/stoi_vs_plr.png)",
         "- [SI-SDR vs PLR](plots/si_sdr_vs_plr.png)",
         "- [Post-Repair Loss](plots/post_repair_loss.png)",
@@ -238,7 +247,7 @@ def generate_report(results_dir: str):
 
 
 NETWORK_TYPES = ["random_loss", "burst_loss", "jitter_discard"]
-PROTECTION_METHODS = ["none", "random", "heuristic", "importance_aware"]
+PROTECTION_METHODS = ["none", "random", "heuristic", "importance_aware", "importance_selective"]
 
 
 if __name__ == "__main__":

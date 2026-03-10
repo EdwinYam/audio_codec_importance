@@ -20,8 +20,8 @@ from poc.importance.composite import score_individual
 
 # ─── Configuration ───────────────────────────────────────────────
 NETWORK_TYPES = ["random_loss"]
-PLRS = [0.01, 0.03, 0.05]
-PROTECTION_METHODS = ["none", "random", "heuristic", "importance_aware"]
+PLRS = [0.0, 0.01, 0.03, 0.05]
+PROTECTION_METHODS = ["none", "random", "heuristic", "importance_aware", "importance_selective"]
 BUDGET_FRAC = 0.10  # 10% redundancy budget
 SEEDS = [42, 123]  # 2 seeds for averaging
 TARGET_SR = 24000
