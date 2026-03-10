@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "*",
+      "Bash(python3 poc/run_experiment.py --synthetic)",
+      "Read(//tmp/**)",
+      "Bash(curl -sL \"https://www.openslr.org/resources/12/test-clean.tar.gz\" -o test-clean.tar.gz)",
+      "Bash(tar xzf test-clean.tar.gz --strip-components=1)",
+      "Bash(python3 poc/run_experiment.py)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 poc/report.py)",
+      "Bash(~/.local/bin/pip install --break-system-packages tabulate)",
+      "Bash(dpkg -l)",
+      "Bash(~/.local/bin/pip install --break-system-packages --only-binary=:all: pesq)",
+      "Bash(CC=gcc-14 ~/.local/bin/pip install --break-system-packages pesq)",
+      "Bash(~/.miniforge3/bin/conda install -y gcc_linux-64 gxx_linux-64 -c conda-forge)",
+      "Bash(export PATH=\"$HOME/.miniforge3/bin:$PATH\")",
+      "Bash(CC=$HOME/.miniforge3/bin/x86_64-conda-linux-gnu-gcc ~/.local/bin/pip install --break-system-packages pesq)",
+      "Bash(CC=\"/home/smartedwin/.miniforge3/bin/x86_64-conda-linux-gnu-gcc\" /home/smartedwin/.local/bin/pip install --break-system-packages pesq)",
+      "Bash(CC=\"/home/smartedwin/.miniforge3/bin/x86_64-conda-linux-gnu-gcc\" CFLAGS=\"-I/home/smartedwin/.miniforge3/include/python3.12\" /home/smartedwin/.local/bin/pip install --break-system-packages pesq)",
+      "Bash(git init)",
+      "Bash(git add .)",
+      "Bash(git commit:*)",
+      "Bash(git config user.name \"EdwinYam\")",
+      "Bash(git config user.email \"ntuedwin@gmail.com\")"
+    ]
+  },
+  "defaultMode": "bypassPermissions"
+}
