@@ -194,43 +194,51 @@ def generate_report(results_dir: str):
         "",
     ]
 
-    # Per-codec results (averaged across concealments for main tables)
+    # Per-codec results, broken down by concealment method
+    concealments = sorted(df["concealment"].unique()) if has_concealment else ["zero_fill"]
     for codec in codecs:
-        report_lines.append(f"## {codec} Results (averaged over files, seeds, concealments)\n")
-        codec_summary = summary_no_conc[summary_no_conc["codec"] == codec]
+        report_lines.append(f"## {codec} Results (averaged over files, seeds)\n")
+        codec_summary = summary[summary["codec"] == codec]
 
         for net in sorted(df["network_type"].unique()):
             report_lines.append(f"### {net.replace('_', ' ').title()}\n")
-            sub = codec_summary[codec_summary["network_type"] == net]
-            if len(sub) == 0:
+            net_sub = codec_summary[codec_summary["network_type"] == net]
+            if len(net_sub) == 0:
                 report_lines.append("_No data._\n")
                 continue
 
-            pivot_pesq = sub.pivot(index="target_plr", columns="protection_method", values="PESQ")
-            report_lines.append("**PESQ WB (MOS-LQO):**\n")
-            report_lines.append(pivot_pesq.round(3).to_markdown())
-            report_lines.append("")
+            for conc in concealments:
+                sub = net_sub[net_sub["concealment"] == conc]
+                if len(sub) == 0:
+                    continue
+                conc_label = conc.replace("_", " ").title()
+                report_lines.append(f"#### Concealment: {conc_label}\n")
 
-            if "PESQ_NB" in sub.columns:
-                pivot_pesq_nb = sub.pivot(index="target_plr", columns="protection_method", values="PESQ_NB")
-                report_lines.append("**PESQ NB (MOS-LQO):**\n")
-                report_lines.append(pivot_pesq_nb.round(3).to_markdown())
+                pivot_pesq = sub.pivot(index="target_plr", columns="protection_method", values="PESQ")
+                report_lines.append("**PESQ WB (MOS-LQO):**\n")
+                report_lines.append(pivot_pesq.round(3).to_markdown())
                 report_lines.append("")
 
-            pivot_stoi = sub.pivot(index="target_plr", columns="protection_method", values="STOI")
-            report_lines.append("**STOI:**\n")
-            report_lines.append(pivot_stoi.round(4).to_markdown())
-            report_lines.append("")
+                if "PESQ_NB" in sub.columns:
+                    pivot_pesq_nb = sub.pivot(index="target_plr", columns="protection_method", values="PESQ_NB")
+                    report_lines.append("**PESQ NB (MOS-LQO):**\n")
+                    report_lines.append(pivot_pesq_nb.round(3).to_markdown())
+                    report_lines.append("")
 
-            pivot_sdr = sub.pivot(index="target_plr", columns="protection_method", values="SI-SDR")
-            report_lines.append("**SI-SDR (dB):**\n")
-            report_lines.append(pivot_sdr.round(2).to_markdown())
-            report_lines.append("")
+                pivot_stoi = sub.pivot(index="target_plr", columns="protection_method", values="STOI")
+                report_lines.append("**STOI:**\n")
+                report_lines.append(pivot_stoi.round(4).to_markdown())
+                report_lines.append("")
 
-            pivot_loss = sub.pivot(index="target_plr", columns="protection_method", values="post_repair_loss_rate")
-            report_lines.append("**Post-Repair Loss Rate:**\n")
-            report_lines.append(pivot_loss.round(4).to_markdown())
-            report_lines.append("")
+                pivot_sdr = sub.pivot(index="target_plr", columns="protection_method", values="SI-SDR")
+                report_lines.append("**SI-SDR (dB):**\n")
+                report_lines.append(pivot_sdr.round(2).to_markdown())
+                report_lines.append("")
+
+                pivot_loss = sub.pivot(index="target_plr", columns="protection_method", values="post_repair_loss_rate")
+                report_lines.append("**Post-Repair Loss Rate:**\n")
+                report_lines.append(pivot_loss.round(4).to_markdown())
+                report_lines.append("")
 
     # Concealment comparison section
     if has_concealment and df["concealment"].nunique() > 1:
