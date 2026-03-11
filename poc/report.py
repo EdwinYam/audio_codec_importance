@@ -14,24 +14,59 @@ MARKERS = {"none": "x", "random": "s", "heuristic": "^",
            "importance_aware": "o", "importance_selective": "D"}
 
 
-def _plot_metric_vs_plr(summary, codecs, metric, ylabel, title, save_path):
+def _plot_metric_vs_plr(summary, codecs, metric, ylabel, title, save_path,
+                        methods=None):
     """Plot a metric vs PLR, one subplot per codec."""
+    if methods is None:
+        methods = METHODS
     n = len(codecs)
     fig, axes = plt.subplots(1, n, figsize=(7 * n, 5), sharey=True, squeeze=False)
     for ax, codec in zip(axes[0], codecs):
         sub = summary[summary["codec"] == codec]
-        for method in METHODS:
+        for method in methods:
             m = sub[sub["protection_method"] == method]
             if len(m) == 0:
                 continue
             label = method.replace("_", " ").title()
+            marker = MARKERS.get(method, "o")
             ax.plot(m["target_plr"] * 100, m[metric],
-                    marker=MARKERS[method], label=label, linewidth=2)
+                    marker=marker, label=label, linewidth=2)
         ax.set_xlabel("Target PLR (%)")
         ax.set_title(codec)
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
     axes[0][0].set_ylabel(ylabel)
+    fig.suptitle(title, fontsize=14)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+
+
+def _plot_metric_by_concealment(summary, codecs, metric, ylabel, title, save_path):
+    """Plot a metric vs PLR, faceted by codec and concealment."""
+    concealments = sorted(summary["concealment"].unique()) if "concealment" in summary.columns else ["zero_fill"]
+    n_codecs = len(codecs)
+    n_conc = len(concealments)
+    fig, axes = plt.subplots(n_conc, n_codecs, figsize=(7 * n_codecs, 4 * n_conc),
+                              sharey=True, squeeze=False)
+    methods_in_data = [m for m in METHODS if m in summary["protection_method"].values]
+    for row, conc in enumerate(concealments):
+        for col, codec in enumerate(codecs):
+            ax = axes[row][col]
+            sub = summary[(summary["codec"] == codec) & (summary["concealment"] == conc)]
+            for method in methods_in_data:
+                m = sub[sub["protection_method"] == method]
+                if len(m) == 0:
+                    continue
+                label = method.replace("_", " ").title()
+                marker = MARKERS.get(method, "o")
+                ax.plot(m["target_plr"] * 100, m[metric],
+                        marker=marker, label=label, linewidth=2)
+            ax.set_xlabel("Target PLR (%)")
+            ax.set_title(f"{codec} / {conc}")
+            ax.legend(fontsize=7)
+            ax.grid(True, alpha=0.3)
+        axes[row][0].set_ylabel(ylabel)
     fig.suptitle(title, fontsize=14)
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
@@ -55,29 +90,55 @@ def generate_report(results_dir: str):
         df["codec"] = "EnCodec_3kbps"
     codecs = sorted(df["codec"].unique())
 
+    has_concealment = "concealment" in df.columns
+    if not has_concealment:
+        df["concealment"] = "zero_fill"
+
     # Average over seeds and files
-    group_cols = ["codec", "network_type", "target_plr", "protection_method"]
-    metrics = ["PESQ", "STOI", "ESTOI", "SI-SDR", "post_repair_loss_rate",
-               "concealment_rate", "mean_burst_len", "max_burst_len"]
+    group_cols = ["codec", "network_type", "target_plr", "protection_method", "concealment"]
+    metrics = ["PESQ", "PESQ_WB", "PESQ_NB", "STOI", "ESTOI", "SI-SDR",
+               "post_repair_loss_rate", "concealment_rate", "mean_burst_len",
+               "max_burst_len"]
     avail_metrics = [m for m in metrics if m in df.columns]
     summary = df.groupby(group_cols)[avail_metrics].mean().reset_index()
 
+    # For plots that aggregate across concealments (backward compat)
+    group_cols_no_conc = ["codec", "network_type", "target_plr", "protection_method"]
+    summary_no_conc = df.groupby(group_cols_no_conc)[avail_metrics].mean().reset_index()
+
     # ─── Plots per metric ──────────────────────────────────────────
-    _plot_metric_vs_plr(summary, codecs, "PESQ", "PESQ (MOS-LQO)",
+    _plot_metric_vs_plr(summary_no_conc, codecs, "PESQ", "PESQ (MOS-LQO)",
                         "PESQ vs Packet Loss Rate",
                         os.path.join(plots_dir, "pesq_vs_plr.png"))
-    _plot_metric_vs_plr(summary, codecs, "STOI", "STOI",
+    _plot_metric_vs_plr(summary_no_conc, codecs, "STOI", "STOI",
                         "STOI vs Packet Loss Rate",
                         os.path.join(plots_dir, "stoi_vs_plr.png"))
-    _plot_metric_vs_plr(summary, codecs, "SI-SDR", "SI-SDR (dB)",
+    _plot_metric_vs_plr(summary_no_conc, codecs, "SI-SDR", "SI-SDR (dB)",
                         "SI-SDR vs Packet Loss Rate",
                         os.path.join(plots_dir, "si_sdr_vs_plr.png"))
 
+    # PESQ_NB plot
+    if "PESQ_NB" in df.columns:
+        _plot_metric_vs_plr(summary_no_conc, codecs, "PESQ_NB", "PESQ-NB (MOS-LQO)",
+                            "PESQ Narrowband vs Packet Loss Rate",
+                            os.path.join(plots_dir, "pesq_nb_vs_plr.png"))
+
     # Post-repair loss rate
-    _plot_metric_vs_plr(summary, codecs, "post_repair_loss_rate",
+    _plot_metric_vs_plr(summary_no_conc, codecs, "post_repair_loss_rate",
                         "Post-Repair Loss Rate",
                         "Post-Repair Loss Rate vs Target PLR",
                         os.path.join(plots_dir, "post_repair_loss.png"))
+
+    # Concealment comparison plots
+    if has_concealment and df["concealment"].nunique() > 1:
+        for metric_name, ylabel in [("PESQ", "PESQ (MOS-LQO)"), ("STOI", "STOI"),
+                                     ("SI-SDR", "SI-SDR (dB)")]:
+            if metric_name in avail_metrics:
+                _plot_metric_by_concealment(
+                    summary, codecs, metric_name, ylabel,
+                    f"{metric_name} by Concealment Method",
+                    os.path.join(plots_dir, f"{metric_name.lower().replace('-','_')}_by_concealment.png"),
+                )
 
     # ─── Oracle diagnostics plot ───────────────────────────────────
     if df_diag is not None and len(df_diag) > 0:
@@ -121,6 +182,7 @@ def generate_report(results_dir: str):
         f"**Audio files**: {df['file'].nunique()}\n",
         f"**Codecs**: {', '.join(codecs)}\n",
         f"**Seeds**: {sorted(df['seed'].unique())}\n",
+        f"**Concealments**: {', '.join(sorted(df['concealment'].unique()))}\n",
         "",
         "## Experiment Configuration\n",
         f"- **Codecs**: {', '.join(codecs)}",
@@ -128,13 +190,14 @@ def generate_report(results_dir: str):
         f"- **Network types**: {', '.join(sorted(df['network_type'].unique()))}",
         f"- **PLRs**: {', '.join(str(int(p*100))+'%' for p in sorted(df['target_plr'].unique()))}",
         f"- **Protection methods**: {', '.join(sorted(df['protection_method'].unique()))}",
+        f"- **Concealment methods**: {', '.join(sorted(df['concealment'].unique()))}",
         "",
     ]
 
-    # Per-codec results
+    # Per-codec results (averaged across concealments for main tables)
     for codec in codecs:
-        report_lines.append(f"## {codec} Results (averaged over files and seeds)\n")
-        codec_summary = summary[summary["codec"] == codec]
+        report_lines.append(f"## {codec} Results (averaged over files, seeds, concealments)\n")
+        codec_summary = summary_no_conc[summary_no_conc["codec"] == codec]
 
         for net in sorted(df["network_type"].unique()):
             report_lines.append(f"### {net.replace('_', ' ').title()}\n")
@@ -144,21 +207,40 @@ def generate_report(results_dir: str):
                 continue
 
             pivot_pesq = sub.pivot(index="target_plr", columns="protection_method", values="PESQ")
-            pivot_stoi = sub.pivot(index="target_plr", columns="protection_method", values="STOI")
-            pivot_sdr = sub.pivot(index="target_plr", columns="protection_method", values="SI-SDR")
-            pivot_loss = sub.pivot(index="target_plr", columns="protection_method", values="post_repair_loss_rate")
-
-            report_lines.append("**PESQ (MOS-LQO):**\n")
+            report_lines.append("**PESQ WB (MOS-LQO):**\n")
             report_lines.append(pivot_pesq.round(3).to_markdown())
             report_lines.append("")
+
+            if "PESQ_NB" in sub.columns:
+                pivot_pesq_nb = sub.pivot(index="target_plr", columns="protection_method", values="PESQ_NB")
+                report_lines.append("**PESQ NB (MOS-LQO):**\n")
+                report_lines.append(pivot_pesq_nb.round(3).to_markdown())
+                report_lines.append("")
+
+            pivot_stoi = sub.pivot(index="target_plr", columns="protection_method", values="STOI")
             report_lines.append("**STOI:**\n")
             report_lines.append(pivot_stoi.round(4).to_markdown())
             report_lines.append("")
+
+            pivot_sdr = sub.pivot(index="target_plr", columns="protection_method", values="SI-SDR")
             report_lines.append("**SI-SDR (dB):**\n")
             report_lines.append(pivot_sdr.round(2).to_markdown())
             report_lines.append("")
+
+            pivot_loss = sub.pivot(index="target_plr", columns="protection_method", values="post_repair_loss_rate")
             report_lines.append("**Post-Repair Loss Rate:**\n")
             report_lines.append(pivot_loss.round(4).to_markdown())
+            report_lines.append("")
+
+    # Concealment comparison section
+    if has_concealment and df["concealment"].nunique() > 1:
+        report_lines.append("## Concealment Method Comparison\n")
+        conc_summary = df.groupby(["codec", "concealment"])[avail_metrics].mean().reset_index()
+        for codec in codecs:
+            csub = conc_summary[conc_summary["codec"] == codec]
+            report_lines.append(f"### {codec}\n")
+            display_cols = ["concealment"] + [m for m in ["PESQ", "PESQ_NB", "STOI", "SI-SDR"] if m in csub.columns]
+            report_lines.append(csub[display_cols].round(4).to_markdown(index=False))
             report_lines.append("")
 
     # Oracle diagnostics section
@@ -179,7 +261,7 @@ def generate_report(results_dir: str):
     # Interpretation
     report_lines.append("## Interpretation\n")
     for codec in codecs:
-        codec_summary = summary[summary["codec"] == codec]
+        codec_summary = summary_no_conc[summary_no_conc["codec"] == codec]
         best_results = []
         for net in sorted(df["network_type"].unique()):
             for plr in sorted(df["target_plr"].unique()):
@@ -190,7 +272,8 @@ def generate_report(results_dir: str):
                 best_stoi = sub.loc[sub["STOI"].idxmax()]
                 best_results.append(best_stoi["protection_method"])
 
-        for method in METHODS:
+        avail_methods = sorted(df["protection_method"].unique())
+        for method in avail_methods:
             wins = sum(1 for m in best_results if m == method)
             if wins > 0:
                 report_lines.append(
@@ -206,6 +289,12 @@ def generate_report(results_dir: str):
         "- [SI-SDR vs PLR](plots/si_sdr_vs_plr.png)",
         "- [Post-Repair Loss](plots/post_repair_loss.png)",
     ])
+    if "PESQ_NB" in df.columns:
+        report_lines.append("- [PESQ-NB vs PLR](plots/pesq_nb_vs_plr.png)")
+    if has_concealment and df["concealment"].nunique() > 1:
+        report_lines.append("- [PESQ by Concealment](plots/pesq_by_concealment.png)")
+        report_lines.append("- [STOI by Concealment](plots/stoi_by_concealment.png)")
+        report_lines.append("- [SI-SDR by Concealment](plots/si_sdr_by_concealment.png)")
     if has_diag:
         report_lines.append("- [Oracle Diagnostics](plots/oracle_diagnostics.png)")
 

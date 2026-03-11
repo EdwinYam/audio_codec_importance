@@ -4,4 +4,6 @@ __pycache__/
 *.onnx
 *.npz
 poc/codec/onnx/
+cache/
+poc/data/calibration/
 .env

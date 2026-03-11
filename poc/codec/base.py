@@ -15,9 +15,12 @@ class CodecInterface(ABC):
         """Decode token indices back to PCM."""
 
     @abstractmethod
-    def decode_with_mask(self, tokens: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        """Decode tokens with a boolean mask; masked frames are zero-filled (PLC stub).
-        mask: shape (n_frames,), True = frame available, False = lost."""
+    def decode_with_mask(
+        self, tokens: np.ndarray, mask: np.ndarray, concealment: str = "zero_fill"
+    ) -> np.ndarray:
+        """Decode tokens with a boolean mask; lost frames are concealed.
+        mask: shape (n_frames,), True = frame available, False = lost.
+        concealment: 'zero_fill', 'neighbor_copy', or 'linear_interp'."""
 
     @property
     @abstractmethod

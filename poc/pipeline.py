@@ -31,6 +31,7 @@ def run_single_experiment(
     seed: int = 42,
     tokens: np.ndarray = None,
     importance_scores: np.ndarray = None,
+    concealment: str = "zero_fill",
 ) -> dict:
     """Run one experiment condition.
 
@@ -112,8 +113,8 @@ def run_single_experiment(
         # 5. Apply protection (repair lost frames that were protected)
         final_mask = apply_protection(raw_mask, protected)
 
-    # 6. Decode with loss
-    pcm_degraded = codec.decode_with_mask(tokens, final_mask)
+    # 6. Decode with loss (apply concealment method)
+    pcm_degraded = codec.decode_with_mask(tokens, final_mask, concealment=concealment)
 
     # 7. Evaluate
     min_len = min(len(pcm), len(pcm_degraded))
@@ -121,7 +122,7 @@ def run_single_experiment(
     pcm_deg = pcm_degraded[:min_len]
 
     quality = compute_all_quality(pcm_ref, pcm_deg, codec.sample_rate)
-    concealment = concealment_stats(final_mask)
+    conc_stats = concealment_stats(final_mask)
 
     # Effective loss rate after protection
     raw_loss_rate = 1.0 - raw_mask.mean()
@@ -131,11 +132,12 @@ def run_single_experiment(
         "network_type": network_type,
         "target_plr": plr,
         "protection_method": protection_method,
+        "concealment": concealment,
         "budget_frac": budget_frac,
         "n_frames": n_frames,
         "n_protected": len(protected),
         "raw_loss_rate": float(raw_loss_rate),
         "post_repair_loss_rate": float(final_loss_rate),
         **quality,
-        **concealment,
+        **conc_stats,
     }

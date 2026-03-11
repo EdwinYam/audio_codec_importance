@@ -117,8 +117,10 @@ class HILCodecWrapper(CodecInterface):
         out = self._dec.run(None, dec_input)
         return np.squeeze(out[0])
 
-    def decode_with_mask(self, tokens: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        """Decode with frame-level mask. Lost frames get zero tokens (PLC stub)."""
-        tokens_masked = tokens.copy()
-        tokens_masked[~mask] = 0
+    def decode_with_mask(
+        self, tokens: np.ndarray, mask: np.ndarray, concealment: str = "zero_fill"
+    ) -> np.ndarray:
+        """Decode with frame-level mask. Lost frames are concealed."""
+        from .concealment import apply_concealment
+        tokens_masked = apply_concealment(tokens, mask, method=concealment)
         return self.decode(tokens_masked)
