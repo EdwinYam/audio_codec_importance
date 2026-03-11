@@ -37,7 +37,7 @@ CODEC_CONFIGS = [
 NETWORK_TYPES = ["random_loss"]
 PLRS = [0.0, 0.01, 0.03, 0.05, 0.10, 0.20, 0.30, 0.40]
 PROTECTION_METHODS = ["none", "random", "heuristic", "importance_aware", "importance_selective"]
-CONCEALMENTS = ["zero_fill", "neighbor_copy", "linear_interp"]
+CONCEALMENTS = ["zero_fill", "neighbor_copy"]
 BUDGET_FRAC = 0.10  # 10% redundancy budget
 SEEDS = [42, 123]  # 2 seeds for averaging
 TARGET_SR = 24000
@@ -72,7 +72,7 @@ def load_and_resample(path: str, target_sr: int = TARGET_SR) -> np.ndarray:
 
 
 def run_full_matrix(data_dir: str, results_dir: str, focused: bool = False,
-                    skip_oracle: bool = False):
+                    skip_oracle: bool = False, codec_filter: str = None):
     """Run full experiment matrix across all codecs."""
     os.makedirs(results_dir, exist_ok=True)
 
@@ -96,12 +96,21 @@ def run_full_matrix(data_dir: str, results_dir: str, focused: bool = False,
 
     concealments = CONCEALMENTS
 
+    # Filter codecs if requested
+    codec_configs = CODEC_CONFIGS
+    if codec_filter:
+        codec_configs = [c for c in CODEC_CONFIGS if codec_filter.lower() in c["name"].lower()]
+        if not codec_configs:
+            print(f"No codec matching '{codec_filter}' found")
+            return
+        print(f"CODEC FILTER: running only {[c['name'] for c in codec_configs]}")
+
     all_results = []
     oracle_diagnostics = []
     timing = {"encode": 0.0, "oracle": 0.0, "experiments": 0.0}
     n_files_processed = 0
 
-    for codec_cfg in CODEC_CONFIGS:
+    for codec_cfg in codec_configs:
         codec_name = codec_cfg["name"]
         print(f"\n{'='*60}")
         print(f"Loading codec: {codec_name}")
@@ -321,6 +330,8 @@ if __name__ == "__main__":
                         help="Run focused experiment: 2 methods, 5 PLRs, 1 seed, 3 concealments")
     parser.add_argument("--skip-oracle", action="store_true",
                         help="Skip oracle computation and diagnostics")
+    parser.add_argument("--codec", default=None,
+                        help="Run only codecs matching this name (e.g. 'hilcodec', 'encodec')")
     args = parser.parse_args()
 
     data_dir = os.path.join(
@@ -338,4 +349,4 @@ if __name__ == "__main__":
         generate_synthetic_data(data_dir)
 
     run_full_matrix(data_dir, results_dir, focused=args.focused,
-                    skip_oracle=args.skip_oracle)
+                    skip_oracle=args.skip_oracle, codec_filter=args.codec)
